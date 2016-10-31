@@ -18,7 +18,29 @@ import openface
 from face_client import FaceClient
 
 from timeout import Timeout
+import pickle
 
+import getpass
+if ( getpass.getuser() == 'hsr-user' ):
+  _HSR = True
+else:
+  _HSR = False
+
+if ( _HSR ):
+    # HSR
+    _OPENFACE_DIR = '/home/hsr-user/ws/src/openface/'
+    _OPENFACE_ROS_DIR = '/home/hsr-user/ws/src/openface_ros/'
+else:
+    # Bart's computer
+    #_OPENFACE_DIR = '/home/toyota/tim-perception-ws/src/openface/'
+    #_OPENFACE_ROS_DIR = '/home/toyota/tim-perception-ws/src/openface_ros/'
+
+    # Toshiba laptop (twist1)
+    _OPENFACE_DIR = '/home/toyota/demo-ws/src/openface/'
+    _OPENFACE_ROS_DIR = '/home/toyota/demo-ws/src/openface_ros/'
+
+_FACE_DICT_FNAME = 'toyota_faces.pickle'
+_SAVE = False
 
 # For attributes
 face_client = FaceClient('69efefc20c7f42d8af1f2646ce6742ec', '5fab420ca6cf4ff28e7780efcffadb6c')
@@ -76,12 +98,19 @@ class OpenfaceROS:
         self._detect_srv = rospy.Service('detect', DetectFace, self._detect_face_srv)
         self._clear_srv = rospy.Service('clear', Empty, self._clear_faces_srv)
 
+
         # Init align and net
         self._align = openface.AlignDlib(align_path)
         self._net = openface.TorchNeuralNet(net_path, imgDim=96, cuda=False)
+        #import sys
+        #sys.path.append('/home/toyota/torch/install/bin/')
         self._face_detector = dlib.get_frontal_face_detector()
 
         self._face_dict = {}  # Mapping from string to list of reps
+
+        with open( _OPENFACE_ROS_DIR + _FACE_DICT_FNAME, 'rb') as f:
+            self._face_dict = pickle.load( f )
+            print "read _face_dict: " + _OPENFACE_ROS_DIR + _FACE_DICT_FNAME
 
         if not os.path.exists(storage_folder):
             os.makedirs(storage_folder)
@@ -92,11 +121,16 @@ class OpenfaceROS:
         detections = [self._update_detection_with_recognition(d) for d in detections]
 
         # Now find the detection index with highest name probability, only for image in /tmp/faces
+        min_distance = 1000.
         for name in self._face_dict.keys():
             try:
                 l2_distances = [ dict(zip(d["names"], d["l2_distances"]))[name] for d in detections ]
                 min_index = l2_distances.index(min(l2_distances))
                 detections[min_index]["name"] = name
+                # this code properlly labels bounding boxes but can caused other problems in the code...
+                #if ( l2_distances[min_index] < min_distance ):
+                #    min_distance = l2_distances[min_index];
+                #    detections[min_index]["name"] = name
             except: # If recognizer does not find face in detection
                 pass
 
@@ -166,6 +200,11 @@ class OpenfaceROS:
 
         rospy.loginfo("Succesfully learned face of '%s'" % req.name)
 
+        # from http://www.diveintopython3.net/serializing.html
+        with open( _OPENFACE_ROS_DIR + _FACE_DICT_FNAME, 'wb' ) as f:
+            pickle.dump( self._face_dict, f );
+            print "wrote _face_dict: " + _OPENFACE_ROS_DIR + _FACE_DICT_FNAME
+
         return {"error_msg": ""}
 
     def _save_images(self, detections, bgr_image):
@@ -173,6 +212,7 @@ class OpenfaceROS:
         cv2.imwrite("%s/%s_detect.jpeg" % (self._storage_folder, now.strftime("%Y-%m-%d-%H-%M-%d-%f")), bgr_image)
 
         for d in detections:
+            #print d
             now = datetime.now()
             cv2.imwrite("%s/roi_%s_detection.jpeg" % (self._storage_folder, now.strftime("%Y-%m-%d-%H-%M-%d-%f")), d["roi"])
 
@@ -181,6 +221,9 @@ class OpenfaceROS:
             txt = ""
             try:
                 if "name" in d:
+                    #print "*****"
+                    #print d["name"]
+                    #print "*****"
                     txt += d["name"]
                 txt += " (" + d["attrs"]["gender"]["value"] + ", " + d["attrs"]["age_est"]["value"] + ")"
             except KeyError:
@@ -213,15 +256,16 @@ class OpenfaceROS:
         # Try to recognize
         detections = self._update_detections_with_recognitions(detections)
 
-        rospy.logerr("This is for debugging")
-        rospy.logerr(detections)
+        #rospy.logerr("This is for debugging")
+        #rospy.logerr(detections)
 
         # Try to add attributes
         if req.external_api_request:
             detections = self._update_detections_with_attributes(detections)
 
         # Save images
-        self._save_images(detections, bgr_image)
+        if _SAVE:
+            self._save_images(detections, bgr_image)
 
         return {
             "face_detections": [FaceDetection(names=(d["names"] if "name" in d else []),
@@ -236,10 +280,20 @@ class OpenfaceROS:
         }
 
 if __name__ == '__main__':
-    rospy.init_node('openface')
+    ####################
+    # main creates an instance of OpenfaceROS
+    camera_lr = rospy.get_param('~camera_lr','');
+    if ( not camera_lr ):
+        camera_lr = "_" + camera_lr
 
-    align_path_param = rospy.get_param('~align_path', os.path.expanduser('~/openface/models/dlib/shape_predictor_68_face_landmarks.dat'))
-    net_path_param = rospy.get_param('~net_path', os.path.expanduser('~/openface/models/openface/nn4.small2.v1.t7'))
+    rospy.init_node('openface' + camera_lr)
+
+    #align_path_param = rospy.get_param('~align_path', os.path.expanduser('~/openface/models/dlib/shape_predictor_68_face_landmarks.dat'))
+    #net_path_param = rospy.get_param('~net_path', os.path.expanduser('~/openface/models/openface/nn4.small2.v1.t7'))
+
+    align_path_param = rospy.get_param('~align_path', _OPENFACE_DIR + 'models/dlib/shape_predictor_68_face_landmarks.dat')
+    net_path_param = rospy.get_param('~net_path', _OPENFACE_DIR + 'models/openface/nn4.small2.v1.t7')
+
     storage_folder_param = rospy.get_param('~storage_folder', os.path.expanduser('/tmp/faces'))
 
     openface_node = OpenfaceROS(align_path_param, net_path_param, storage_folder_param)

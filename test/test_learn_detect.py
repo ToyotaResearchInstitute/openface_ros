@@ -9,9 +9,22 @@ import sys
 from openface_ros.srv import LearnFace, DetectFace
 from std_srvs.srv import Empty
 
+from std_msgs.msg import String
+import code # for code.interact
+from geometry_msgs.msg import PoseStamped
+
+_MAX_DISTANCE_FOR_MATCH = .5
+_SHOW = 1
+_INTERACTIVE = 0
+
+####################
+# init the the ROS node, etc.
+rospy.init_node('test_learn_detect',anonymous=True)
+
 bridge = CvBridge()
 
-rospy.init_node('test_learn_detect')
+camera_lr = rospy.get_param("~camera_lr","");
+print "camera_lr: " + camera_lr
 
 try:
     external_api_request = rospy.get_param("~external_api_request")
@@ -19,6 +32,8 @@ except KeyError as e:
     rospy.logerr("Please specify param: %s", e)
     sys.exit(1)
 
+####################
+# wait for learn, detect and clear services
 learn_srv_name = "learn"
 detect_srv_name = "detect"
 clear_srv_name = "clear"
@@ -33,6 +48,21 @@ learn_srv = rospy.ServiceProxy(learn_srv_name, LearnFace)
 detect_srv = rospy.ServiceProxy(detect_srv_name, DetectFace)
 clear_srv = rospy.ServiceProxy(clear_srv_name, Empty)
 
+def msg_pub(name):
+    pub = rospy.Publisher('face_recognition_name', String, queue_size=10)
+    pub.publish( name )
+
+def msg_pub_with_pos(name, r, c):
+    if ( not camera_lr ):
+        pub = rospy.Publisher('face_recognition_name', PoseStamped, queue_size=10)
+    else:
+        pub = rospy.Publisher('face_recognition_name_'+camera_lr, PoseStamped, queue_size=10)
+    point = PoseStamped()
+    point.header.stamp = rospy.Time.now()
+    point.header.frame_id = name
+    point.pose.position.x = c
+    point.pose.position.y = r
+    pub.publish( point )
 
 def callback(data):
     try:
@@ -41,18 +71,80 @@ def callback(data):
         rospy.logerr(e)
         return
 
-    cv2.imshow("Image window", cv_image)
-    key = cv2.waitKey(10)
+    if _SHOW:
+	cv2.imshow("Image window", cv_image)
+
+    if ( _INTERACTIVE ):
+        key = cv2.waitKey(10)
+    else:
+        cv2.waitKey(10)
+        key = 1048676
 
     if key == 1048684 or key == 108: # L
         print learn_srv(image=data, name=raw_input("Name? "))
     elif key == 1048676 or key == 100: # D
-        print detect_srv(image=data, external_api_request=external_api_request)
+        detections = detect_srv(image=data, external_api_request=external_api_request)
+        #print detections
+
+        if ( detections.face_detections.__len__() == 0):
+            disp_str = "(no detections)"
+            if ( camera_lr ):
+                disp_str = camera_lr + ": " + disp_str
+            print disp_str
+
+            if ( not camera_lr ):
+                msg_pub( '(no detections)' )
+            else:
+                msg_pub_with_pos( '(no detections)', -1, -1 )
+            return
+
+        #code.interact( local=locals() );
+
+        # unpack detections, find the winner
+        names = detections.face_detections[0].names
+        distances = detections.face_detections[0].l2_distances
+        c = detections.face_detections[0].x + detections.face_detections[0].width/2.
+        r = detections.face_detections[0].y + detections.face_detections[0].height/2.
+
+        min_distance = 1000.
+        min_distance_idx = 1000
+        for idx, val in enumerate( distances ):
+            if ( val < min_distance ):
+                min_distance = val
+                min_distance_idx = idx
+        #print distances
+        #print min_distance
+        #print min_distance_idx
+
+        if min_distance < _MAX_DISTANCE_FOR_MATCH:
+            #print min_distance_idx
+            match_name = names[ min_distance_idx ]
+            disp_str = names[ min_distance_idx ] + ' with distance ' + str( min_distance )
+            if ( camera_lr ):
+                disp_str = camera_lr + ": " + disp_str
+            print disp_str
+        else:
+            match_name = '(unknown)'
+            # occasionally, the first catch of no detections will not catch so make sure a distances really has something
+            if ( min_distance_idx != 1000 ):
+                disp_str ='(unknown)' + '; closest is ' + names[ min_distance_idx ] + ' with distance ' + str( min_distance ) 
+            else:
+                disp_str = '(unknown)'
+            if ( camera_lr ):
+                disp_str = camera_lr + ": " + disp_str
+            print disp_str
+
+        # publish
+        if ( not camera_lr ):
+            msg_pub( match_name )
+        else:
+            msg_pub_with_pos( match_name, r, c )
     elif key == 1048675 or key == 99: # C
         print clear_srv()
 
     return
 
+# subscribes to images with its callback (its callback learns/detects, calling the server)
 image_sub = rospy.Subscriber("image", Image, callback)
 rospy.loginfo("Listening to %s -- spinning .." % image_sub.name)
 rospy.loginfo("Usage: L to learn, D to detect")
