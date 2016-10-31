@@ -19,25 +19,14 @@ from face_client import FaceClient
 
 from timeout import Timeout
 import pickle
+import rospkg
 
-import getpass
-if ( getpass.getuser() == 'hsr-user' ):
-  _HSR = True
-else:
-  _HSR = False
+rp = rospkg.RosPack()
+openface_path = rp.get_path('openface_ros')
+demo_lib_path = rp.get_path('hsr_demo_library')
 
-if ( _HSR ):
-    # HSR
-    _OPENFACE_DIR = '/home/hsr-user/ws/src/openface/'
-    _OPENFACE_ROS_DIR = '/home/hsr-user/ws/src/openface_ros/'
-else:
-    # Bart's computer
-    #_OPENFACE_DIR = '/home/toyota/tim-perception-ws/src/openface/'
-    #_OPENFACE_ROS_DIR = '/home/toyota/tim-perception-ws/src/openface_ros/'
-
-    # Toshiba laptop (twist1)
-    _OPENFACE_DIR = '/home/toyota/demo-ws/src/openface/'
-    _OPENFACE_ROS_DIR = '/home/toyota/demo-ws/src/openface_ros/'
+_OPENFACE_DIR = openface_path
+_DEMO_LIB_DIR = demo_lib_path
 
 _FACE_DICT_FNAME = 'toyota_faces.pickle'
 _SAVE = False
@@ -108,9 +97,9 @@ class OpenfaceROS:
 
         self._face_dict = {}  # Mapping from string to list of reps
 
-        with open( _OPENFACE_ROS_DIR + _FACE_DICT_FNAME, 'rb') as f:
+        with open( _DEMO_LIB_DIR + _FACE_DICT_FNAME, 'rb') as f:
             self._face_dict = pickle.load( f )
-            print "read _face_dict: " + _OPENFACE_ROS_DIR + _FACE_DICT_FNAME
+            print "read _face_dict: " + _DEMO_LIB_DIR + _FACE_DICT_FNAME
 
         if not os.path.exists(storage_folder):
             os.makedirs(storage_folder)
@@ -201,9 +190,9 @@ class OpenfaceROS:
         rospy.loginfo("Succesfully learned face of '%s'" % req.name)
 
         # from http://www.diveintopython3.net/serializing.html
-        with open( _OPENFACE_ROS_DIR + _FACE_DICT_FNAME, 'wb' ) as f:
+        with open( _DEMO_LIB_DIR + _FACE_DICT_FNAME, 'wb' ) as f:
             pickle.dump( self._face_dict, f );
-            print "wrote _face_dict: " + _OPENFACE_ROS_DIR + _FACE_DICT_FNAME
+            print "wrote _face_dict: " + _DEMO_LIB_DIR + _FACE_DICT_FNAME
 
         return {"error_msg": ""}
 
