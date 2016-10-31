@@ -22,11 +22,16 @@ import pickle
 import rospkg
 
 rp = rospkg.RosPack()
-openface_path = rp.get_path('openface_ros')
-demo_lib_path = rp.get_path('hsr_demo_library')
+_OPENFACE_DIR = rp.get_path('openface_ros') # find openface (should be at same level as openface_ros per install instructions)
+_OPENFACE_DIR = _OPENFACE_DIR[:-4] + "/" 
+if (not os.path.exists( _OPENFACE_DIR ) ):
+  print "openface directory does not exist; exiting"
+  sys.exit()
 
-_OPENFACE_DIR = openface_path
-_DEMO_LIB_DIR = demo_lib_path
+_DEMO_LIB_DIR = rp.get_path('hsr_demo_library') + "/data/"
+if (not os.path.exists( _DEMO_LIB_DIR ) ):
+  print "demo lib directory does not exist; exiting"
+  sys.exit()
 
 _FACE_DICT_FNAME = 'toyota_faces.pickle'
 _SAVE = False
@@ -91,10 +96,7 @@ class OpenfaceROS:
         # Init align and net
         self._align = openface.AlignDlib(align_path)
         self._net = openface.TorchNeuralNet(net_path, imgDim=96, cuda=False)
-        #import sys
-        #sys.path.append('/home/toyota/torch/install/bin/')
         self._face_detector = dlib.get_frontal_face_detector()
-
         self._face_dict = {}  # Mapping from string to list of reps
 
         with open( _DEMO_LIB_DIR + _FACE_DICT_FNAME, 'rb') as f:
@@ -276,9 +278,6 @@ if __name__ == '__main__':
         camera_lr = "_" + camera_lr
 
     rospy.init_node('openface' + camera_lr)
-
-    #align_path_param = rospy.get_param('~align_path', os.path.expanduser('~/openface/models/dlib/shape_predictor_68_face_landmarks.dat'))
-    #net_path_param = rospy.get_param('~net_path', os.path.expanduser('~/openface/models/openface/nn4.small2.v1.t7'))
 
     align_path_param = rospy.get_param('~align_path', _OPENFACE_DIR + 'models/dlib/shape_predictor_68_face_landmarks.dat')
     net_path_param = rospy.get_param('~net_path', _OPENFACE_DIR + 'models/openface/nn4.small2.v1.t7')
