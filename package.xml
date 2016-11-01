@@ -40,4 +40,7 @@
   <run_depend>std_srvs</run_depend>
   <build_depend>std_srvs</build_depend>
 
+  <run_depend>openface</run_depend>
+  <build_depend>openface</build_depend>
+
 </package>

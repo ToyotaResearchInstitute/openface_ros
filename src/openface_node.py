@@ -20,13 +20,15 @@ from face_client import FaceClient
 from timeout import Timeout
 import pickle
 import rospkg
+import sys
 
 rp = rospkg.RosPack()
-_OPENFACE_DIR = rp.get_path('openface_ros') # find openface (should be at same level as openface_ros per install instructions)
-_OPENFACE_DIR = _OPENFACE_DIR[:-4] + "/" 
+_OPENFACE_DIR = rp.get_path('openface') # find openface (should be at same level as openface_ros per install instructions)
 if (not os.path.exists( _OPENFACE_DIR ) ):
   print "openface directory does not exist; exiting"
   sys.exit()
+else:
+  _OPENFACE_DIR_WITH_SLASH = _OPENFACE_DIR + os.sep
 
 _DEMO_LIB_DIR = rp.get_path('hsr_demo_library') + "/data/"
 if (not os.path.exists( _DEMO_LIB_DIR ) ):
@@ -279,8 +281,16 @@ if __name__ == '__main__':
 
     rospy.init_node('openface' + camera_lr)
 
-    align_path_param = rospy.get_param('~align_path', _OPENFACE_DIR + 'models/dlib/shape_predictor_68_face_landmarks.dat')
-    net_path_param = rospy.get_param('~net_path', _OPENFACE_DIR + 'models/openface/nn4.small2.v1.t7')
+    align_path_param = rospy.get_param('~align_path', _OPENFACE_DIR_WITH_SLASH + 'models/dlib/shape_predictor_68_face_landmarks.dat')
+    #print "hi " + align_path_param
+
+    net_path_param = rospy.get_param('~net_path', _OPENFACE_DIR_WITH_SLASH + 'models/openface/nn4.small2.v1.t7')
+    #print "hi " + net_path_param
+
+    if (not os.path.exists( align_path_param ) or\
+        not os.path.exists( net_path_param ) ):
+         print "openface missing models (be sure to do ./openface/models/get_models.sh); exiting"
+         sys.exit()
 
     storage_folder_param = rospy.get_param('~storage_folder', os.path.expanduser('/tmp/faces'))
 
