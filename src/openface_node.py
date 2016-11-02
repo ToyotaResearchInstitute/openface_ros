@@ -22,22 +22,6 @@ import pickle
 import rospkg
 import sys
 
-rp = rospkg.RosPack()
-_OPENFACE_DIR = rp.get_path('openface') # find openface (should be at same level as openface_ros per install instructions)
-if (not os.path.exists( _OPENFACE_DIR ) ):
-  print "openface directory does not exist; exiting"
-  sys.exit()
-else:
-  _OPENFACE_DIR_WITH_SLASH = _OPENFACE_DIR + os.sep
-
-_DEMO_LIB_DIR = rp.get_path('hsr_demo_library') + "/data/"
-if (not os.path.exists( _DEMO_LIB_DIR ) ):
-  print "demo lib directory does not exist; exiting"
-  sys.exit()
-
-_FACE_DICT_FNAME = 'toyota_faces.pickle'
-_SAVE = False
-
 # For attributes
 face_client = FaceClient('69efefc20c7f42d8af1f2646ce6742ec', '5fab420ca6cf4ff28e7780efcffadb6c')
 def _external_request_with_timeout(buffers):
@@ -88,7 +72,7 @@ def _get_min_l2_distance(vector_list_a, vector_b):
 
 
 class OpenfaceROS:
-    def __init__(self, align_path, net_path, storage_folder):
+    def __init__(self, align_path, net_path, storage_folder, dictionary_file, save):
         self._bridge = CvBridge()
         self._learn_srv = rospy.Service('learn', LearnFace, self._learn_face_srv)
         self._detect_srv = rospy.Service('detect', DetectFace, self._detect_face_srv)
@@ -100,10 +84,13 @@ class OpenfaceROS:
         self._net = openface.TorchNeuralNet(net_path, imgDim=96, cuda=False)
         self._face_detector = dlib.get_frontal_face_detector()
         self._face_dict = {}  # Mapping from string to list of reps
+        self._dictionary_file = dictionary_file
+        self._save = save
 
-        with open( _DEMO_LIB_DIR + _FACE_DICT_FNAME, 'rb') as f:
+        if ( self._dictionary_file != "" ):
+          with open( self._dictionary_file, 'rb') as f:
             self._face_dict = pickle.load( f )
-            print "read _face_dict: " + _DEMO_LIB_DIR + _FACE_DICT_FNAME
+            rospy.loginfo( "read _face_dict: " + self._dictionary_file )
 
         if not os.path.exists(storage_folder):
             os.makedirs(storage_folder)
@@ -114,16 +101,12 @@ class OpenfaceROS:
         detections = [self._update_detection_with_recognition(d) for d in detections]
 
         # Now find the detection index with highest name probability, only for image in /tmp/faces
-        min_distance = 1000.
         for name in self._face_dict.keys():
             try:
                 l2_distances = [ dict(zip(d["names"], d["l2_distances"]))[name] for d in detections ]
                 min_index = l2_distances.index(min(l2_distances))
-                detections[min_index]["name"] = name
-                # this code properlly labels bounding boxes but can caused other problems in the code...
-                #if ( l2_distances[min_index] < min_distance ):
-                #    min_distance = l2_distances[min_index];
-                #    detections[min_index]["name"] = name
+                detections[min_index]["name"] = name # @bug
+                # @todo fix bug in labeling; for now all detections get last name in dictionary
             except: # If recognizer does not find face in detection
                 pass
 
@@ -194,9 +177,10 @@ class OpenfaceROS:
         rospy.loginfo("Succesfully learned face of '%s'" % req.name)
 
         # from http://www.diveintopython3.net/serializing.html
-        with open( _DEMO_LIB_DIR + _FACE_DICT_FNAME, 'wb' ) as f:
+        if ( self._dictionary_file != "" ):
+          with open( self._dictionary_file, 'wb' ) as f:
             pickle.dump( self._face_dict, f );
-            print "wrote _face_dict: " + _DEMO_LIB_DIR + _FACE_DICT_FNAME
+            rospy.loginfo( "wrote _face_dict: " + self._dictionary_file )
 
         return {"error_msg": ""}
 
@@ -205,7 +189,6 @@ class OpenfaceROS:
         cv2.imwrite("%s/%s_detect.jpeg" % (self._storage_folder, now.strftime("%Y-%m-%d-%H-%M-%d-%f")), bgr_image)
 
         for d in detections:
-            #print d
             now = datetime.now()
             cv2.imwrite("%s/roi_%s_detection.jpeg" % (self._storage_folder, now.strftime("%Y-%m-%d-%H-%M-%d-%f")), d["roi"])
 
@@ -214,9 +197,6 @@ class OpenfaceROS:
             txt = ""
             try:
                 if "name" in d:
-                    #print "*****"
-                    #print d["name"]
-                    #print "*****"
                     txt += d["name"]
                 txt += " (" + d["attrs"]["gender"]["value"] + ", " + d["attrs"]["age_est"]["value"] + ")"
             except KeyError:
@@ -249,6 +229,7 @@ class OpenfaceROS:
         # Try to recognize
         detections = self._update_detections_with_recognitions(detections)
 
+        # leave these commented out; otherwise things are too verbose
         #rospy.logerr("This is for debugging")
         #rospy.logerr(detections)
 
@@ -257,7 +238,7 @@ class OpenfaceROS:
             detections = self._update_detections_with_attributes(detections)
 
         # Save images
-        if _SAVE:
+        if self._save:
             self._save_images(detections, bgr_image)
 
         return {
@@ -281,18 +262,33 @@ if __name__ == '__main__':
 
     rospy.init_node('openface' + camera_lr)
 
-    align_path_param = rospy.get_param('~align_path', _OPENFACE_DIR_WITH_SLASH + 'models/dlib/shape_predictor_68_face_landmarks.dat')
-    #print "hi " + align_path_param
+    openface_path_param = rospy.get_param( "~openface_path", "~/openface/" )
+    if ( openface_path_param.find( '~' ) != -1 ):
+      openface_path_param = os.path.expanduser( openface_path_param )
+    rospy.loginfo( "openface_path_param " + openface_path_param )
 
-    net_path_param = rospy.get_param('~net_path', _OPENFACE_DIR_WITH_SLASH + 'models/openface/nn4.small2.v1.t7')
-    #print "hi " + net_path_param
+    align_path_param = rospy.get_param('~align_path', openface_path_param + 'models/dlib/shape_predictor_68_face_landmarks.dat')
+    rospy.loginfo( "align_path_param " + align_path_param )
 
-    if (not os.path.exists( align_path_param ) or\
-        not os.path.exists( net_path_param ) ):
-         print "openface missing models (be sure to do ./openface/models/get_models.sh); exiting"
+    net_path_param = rospy.get_param('~net_path', openface_path_param + 'models/openface/nn4.small2.v1.t7')
+    rospy.loginfo( "net_path_param " + net_path_param )
+
+    if (not os.path.isfile( align_path_param ) or\
+        not os.path.isfile( net_path_param ) ):
+         rospy.error( "openface missing models (be sure to do get_models.sh in openface/models); exiting" )
          sys.exit()
 
     storage_folder_param = rospy.get_param('~storage_folder', os.path.expanduser('/tmp/faces'))
 
-    openface_node = OpenfaceROS(align_path_param, net_path_param, storage_folder_param)
+    dictionary_file_param = rospy.get_param( '~dictionary_file', '' )
+    if ( not os.path.isfile( dictionary_file_param ) ):
+      rospy.logwarn( "dictionary file missing; it will not be loaded nor updated" )
+      dictionary_file_param = ""
+    else:
+      rospy.loginfo( "dictionary_file_param " + dictionary_file_param )
+
+    save_param = rospy.get_param( "~save", "false" )
+    rospy.loginfo( "save_param " + str( save_param ) )
+    
+    openface_node = OpenfaceROS(align_path_param, net_path_param, storage_folder_param, dictionary_file_param, save_param)
     rospy.spin()

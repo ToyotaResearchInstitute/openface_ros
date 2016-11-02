@@ -13,10 +13,6 @@ from std_msgs.msg import String
 import code # for code.interact
 from geometry_msgs.msg import PoseStamped
 
-_MAX_DISTANCE_FOR_MATCH = .5
-_SHOW = 1
-_INTERACTIVE = 0
-
 ####################
 # init the the ROS node, etc.
 rospy.init_node('test_learn_detect',anonymous=True)
@@ -24,7 +20,14 @@ rospy.init_node('test_learn_detect',anonymous=True)
 bridge = CvBridge()
 
 camera_lr = rospy.get_param("~camera_lr","");
-print "camera_lr: " + camera_lr
+rospy.loginfo( "camera_lr " + camera_lr )
+
+_MAX_DISTANCE_FOR_MATCH = rospy.get_param( "~max_distance_for_match", "0.5" )
+rospy.loginfo( "max_distance_for_match " + str( _MAX_DISTANCE_FOR_MATCH ) )
+_SHOW = rospy.get_param( "~show", "true" )
+rospy.loginfo( "show " + str( _SHOW ) )
+_INTERACTIVE = rospy.get_param( "~interactive", "false" )
+rospy.loginfo( "interactive " + str( _INTERACTIVE ) )
 
 try:
     external_api_request = rospy.get_param("~external_api_request")
@@ -81,7 +84,8 @@ def callback(data):
         key = 1048676
 
     if key == 1048684 or key == 108: # L
-        print learn_srv(image=data, name=raw_input("Name? "))
+        learns = learn_srv(image=data, name=raw_input("Name? "))
+        rospy.loginfo( learns )
     elif key == 1048676 or key == 100: # D
         detections = detect_srv(image=data, external_api_request=external_api_request)
         #print detections
@@ -90,15 +94,13 @@ def callback(data):
             disp_str = "(no detections)"
             if ( camera_lr ):
                 disp_str = camera_lr + ": " + disp_str
-            print disp_str
+            rospy.loginfo( disp_str )
 
             if ( not camera_lr ):
                 msg_pub( '(no detections)' )
             else:
                 msg_pub_with_pos( '(no detections)', -1, -1 )
             return
-
-        #code.interact( local=locals() );
 
         # unpack detections, find the winner
         names = detections.face_detections[0].names
@@ -112,17 +114,13 @@ def callback(data):
             if ( val < min_distance ):
                 min_distance = val
                 min_distance_idx = idx
-        #print distances
-        #print min_distance
-        #print min_distance_idx
 
         if min_distance < _MAX_DISTANCE_FOR_MATCH:
-            #print min_distance_idx
             match_name = names[ min_distance_idx ]
             disp_str = names[ min_distance_idx ] + ' with distance ' + str( min_distance )
             if ( camera_lr ):
                 disp_str = camera_lr + ": " + disp_str
-            print disp_str
+            rospy.loginfo( disp_str )
         else:
             match_name = '(unknown)'
             # occasionally, the first catch of no detections will not catch so make sure a distances really has something
@@ -132,7 +130,7 @@ def callback(data):
                 disp_str = '(unknown)'
             if ( camera_lr ):
                 disp_str = camera_lr + ": " + disp_str
-            print disp_str
+            rospy.loginfo( disp_str )
 
         # publish
         if ( not camera_lr ):
