@@ -19,9 +19,6 @@ rospy.init_node('test_learn_detect',anonymous=True)
 
 bridge = CvBridge()
 
-camera_lr = rospy.get_param("~camera_lr","");
-rospy.loginfo( "camera_lr " + camera_lr )
-
 _MAX_DISTANCE_FOR_MATCH = rospy.get_param( "~max_distance_for_match", "0.5" )
 rospy.loginfo( "max_distance_for_match " + str( _MAX_DISTANCE_FOR_MATCH ) )
 _SHOW = rospy.get_param( "~show", "true" )
@@ -56,10 +53,7 @@ def msg_pub(name):
     pub.publish( name )
 
 def msg_pub_with_pos(name, r, c):
-    if ( not camera_lr ):
-        pub = rospy.Publisher('face_recognition_name', PoseStamped, queue_size=10)
-    else:
-        pub = rospy.Publisher('face_recognition_name_'+camera_lr, PoseStamped, queue_size=10)
+    pub = rospy.Publisher('face_recognition_name', PoseStamped, queue_size=10)
     point = PoseStamped()
     point.header.stamp = rospy.Time.now()
     point.header.frame_id = name
@@ -92,14 +86,7 @@ def callback(data):
 
         if ( detections.face_detections.__len__() == 0):
             disp_str = "(no detections)"
-            if ( camera_lr ):
-                disp_str = camera_lr + ": " + disp_str
-            rospy.loginfo( disp_str )
-
-            if ( not camera_lr ):
-                msg_pub( '(no detections)' )
-            else:
-                msg_pub_with_pos( '(no detections)', -1, -1 )
+            msg_pub( '(no detections)' )
             return
 
         # unpack detections, find the winner
@@ -118,8 +105,6 @@ def callback(data):
         if min_distance < _MAX_DISTANCE_FOR_MATCH:
             match_name = names[ min_distance_idx ]
             disp_str = names[ min_distance_idx ] + ' with distance ' + str( min_distance )
-            if ( camera_lr ):
-                disp_str = camera_lr + ": " + disp_str
             rospy.loginfo( disp_str )
         else:
             match_name = '(unknown)'
@@ -128,15 +113,10 @@ def callback(data):
                 disp_str ='(unknown)' + '; closest is ' + names[ min_distance_idx ] + ' with distance ' + str( min_distance ) 
             else:
                 disp_str = '(unknown)'
-            if ( camera_lr ):
-                disp_str = camera_lr + ": " + disp_str
             rospy.loginfo( disp_str )
 
         # publish
-        if ( not camera_lr ):
-            msg_pub( match_name )
-        else:
-            msg_pub_with_pos( match_name, r, c )
+        msg_pub( match_name )
     elif key == 1048675 or key == 99: # C
         print clear_srv()
 

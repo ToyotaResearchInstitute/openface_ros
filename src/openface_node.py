@@ -229,9 +229,9 @@ class OpenfaceROS:
         # Try to recognize
         detections = self._update_detections_with_recognitions(detections)
 
-        # leave these commented out; otherwise things are too verbose
-        #rospy.logerr("This is for debugging")
-        #rospy.logerr(detections)
+        # @warn: verbose!
+        rospy.logdebug("This is for debugging")
+        rospy.logdebug(detections)
 
         # Try to add attributes
         if req.external_api_request:
@@ -256,11 +256,7 @@ class OpenfaceROS:
 if __name__ == '__main__':
     ####################
     # main creates an instance of OpenfaceROS
-    camera_lr = rospy.get_param('~camera_lr','');
-    if ( not camera_lr ):
-        camera_lr = "_" + camera_lr
-
-    rospy.init_node('openface' + camera_lr)
+    rospy.init_node('openface')
 
     openface_path_param = rospy.get_param( "~openface_path", "~/openface/" )
     if ( openface_path_param.find( '~' ) != -1 ):
